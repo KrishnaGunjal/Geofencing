@@ -20,7 +20,6 @@ class _PlacesListState extends State<PlacesList> {
   bool isReady = false;
   Position? position;
   StreamSubscription<GeofenceStatus>? geofenceStatusStream;
-  bool _isNear = false;
   bool _ispopupShown = false;
 
   static const _nearbyLandmarks = [
@@ -72,9 +71,11 @@ class _PlacesListState extends State<PlacesList> {
                 (1 - c((element.longitude - userLongitude) * p)) /
                 2;
         var distance = 12742 * asin(sqrt(a));
-        if (distance < 7) {
+        if (distance < 4) {
           setState(() {
-            _showAlertDialog(element.title);
+            if (!_ispopupShown) {
+              _showAlertDialog(element.title);
+            }
           });
         }
       });
@@ -87,6 +88,7 @@ class _PlacesListState extends State<PlacesList> {
       child: const Text("OK"),
       onPressed: () {
         Navigator.pop(context);
+        _ispopupShown = false;
       },
     );
 
