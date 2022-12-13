@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:html';
 import 'package:easy_geofencing/easy_geofencing.dart';
 import 'package:easy_geofencing/enums/geofence_status.dart';
 import 'package:flutter/material.dart';
@@ -32,6 +33,20 @@ class _PlacesListState extends State<PlacesList> {
   ];
 
   _getPosition() async {
+    var permission = await Geolocator.checkPermission();
+    var serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    
+    if (!serviceEnabled) {
+      _showAlertDialog('Location services are disabled');
+    }
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        _showAlertDialog(
+            'Please enable permission for access location to get alerts');
+      }
+    }
     position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high);
     _getNearbyLandmark();
