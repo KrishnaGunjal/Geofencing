@@ -4,6 +4,8 @@ import 'package:easy_geofencing/enums/geofence_status.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math' show cos, sqrt, asin;
+import 'dart:io' show Platform;
+import 'package:flutter/cupertino.dart';
 
 import '../modals/landmark.dart';
 
@@ -71,7 +73,7 @@ class _PlacesListState extends State<PlacesList> {
                 (1 - c((element.longitude - userLongitude) * p)) /
                 2;
         var distance = 12742 * asin(sqrt(a));
-        if (distance < 4) {
+        if (distance < 7) {
           setState(() {
             if (!_ispopupShown) {
               _showAlertDialog(element.title);
@@ -85,24 +87,36 @@ class _PlacesListState extends State<PlacesList> {
   _showAlertDialog(placeTitle) {
     _ispopupShown = true;
     Widget okButton = TextButton(
-      child: const Text("OK"),
+      child: const Text("Okay"),
       onPressed: () {
         Navigator.pop(context);
         _ispopupShown = false;
       },
     );
-
     AlertDialog alert = AlertDialog(
       title: Text('You are near $placeTitle'),
       actions: [
         okButton,
       ],
     );
-
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return alert;
+        return Platform.isIOS
+            ? CupertinoAlertDialog(
+                title: const Text('Geofencing Alert!'),
+                content: Text(('You are near $placeTitle')),
+                actions: <CupertinoDialogAction>[
+                  CupertinoDialogAction(
+                    child: const Text('Okay'),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _ispopupShown = false;
+                    },
+                  )
+                ],
+              )
+            : alert;
       },
     );
   }
@@ -121,15 +135,28 @@ class _PlacesListState extends State<PlacesList> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Geofencing'),
-      ),
-      body: ListView.builder(
-          itemCount: _nearbyLandmarks.length,
-          itemBuilder: (context, index) => ListTile(
-                title: Text(_nearbyLandmarks[index].title),
-              )),
-    );
+    return Platform.isIOS
+        ? Material(
+            child: CupertinoPageScaffold(
+              navigationBar: const CupertinoNavigationBar(
+                middle: Text('Geofencing'),
+              ),
+              child: ListView.builder(
+                  itemCount: _nearbyLandmarks.length,
+                  itemBuilder: (context, index) => ListTile(
+                        title: Text(_nearbyLandmarks[index].title),
+                      )),
+            ),
+          )
+        : Scaffold(
+            appBar: AppBar(
+              title: const Text('Geofencing'),
+            ),
+            body: ListView.builder(
+                itemCount: _nearbyLandmarks.length,
+                itemBuilder: (context, index) => ListTile(
+                      title: Text(_nearbyLandmarks[index].title),
+                    )),
+          );
   }
 }
