@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:math' show cos, sqrt, asin;
 import 'dart:io' show Platform;
 import 'package:flutter/cupertino.dart';
+import 'package:background_fetch/background_fetch.dart';
 
 import '../modals/landmark.dart';
 
@@ -49,7 +50,25 @@ class _PlacesListState extends State<PlacesList> {
     }
     position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high);
-    _getNearbyLandmark();
+
+    await BackgroundFetch.configure(
+        BackgroundFetchConfig(
+            minimumFetchInterval: 15,
+            stopOnTerminate: false,
+            enableHeadless: true,
+            requiresBatteryNotLow: false,
+            requiresCharging: false,
+            requiresStorageNotLow: false,
+            requiresDeviceIdle: false,
+            requiredNetworkType: NetworkType.NONE), (String taskId) async {
+      //fetch-event callback.
+      _getNearbyLandmark();
+      BackgroundFetch.finish(taskId);
+    }, (String taskId) async {
+      // Task timeout handler.
+      print("[BackgroundFetch] TASK TIMEOUT taskId: $taskId");
+      BackgroundFetch.finish(taskId);
+    });
   }
 
   _getNearbyLandmark() {
