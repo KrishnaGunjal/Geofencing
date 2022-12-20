@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'package:easy_geofencing/easy_geofencing.dart';
 import 'package:easy_geofencing/enums/geofence_status.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'dart:math' show cos, sqrt, asin;
+
+import 'package:location/location.dart';
+import 'dart:math' show cos, sqrt, asin, pow, sin, pi;
 import 'dart:io' show Platform;
 import 'package:flutter/cupertino.dart';
-import 'package:background_fetch/background_fetch.dart';
 
 import '../modals/landmark.dart';
 
@@ -18,10 +17,9 @@ class PlacesList extends StatefulWidget {
 }
 
 class _PlacesListState extends State<PlacesList> {
-  Geolocator geolocator = Geolocator();
+  Location location = new Location();
   String geofenceStatus = '';
   bool isReady = false;
-  Position? position;
   StreamSubscription<GeofenceStatus>? geofenceStatusStream;
   bool _ispopupShown = false;
 
@@ -33,71 +31,35 @@ class _PlacesListState extends State<PlacesList> {
     Landmark(title: 'Kasarsai Dam', latitude: 22.615170, longitude: 88.411510)
   ];
 
-  _getPosition() async {
-    var permission = await Geolocator.checkPermission();
-    var serviceEnabled = await Geolocator.isLocationServiceEnabled();
-
-    if (!serviceEnabled) {
-      _showAlertDialog('Location services are disabled');
-    }
-
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        _showAlertDialog(
-            'Please enable permission for access location to get alerts');
-      }
-    }
-    position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
-
-    await BackgroundFetch.configure(
-        BackgroundFetchConfig(
-            minimumFetchInterval: 15,
-            stopOnTerminate: false,
-            enableHeadless: true,
-            requiresBatteryNotLow: false,
-            requiresCharging: false,
-            requiresStorageNotLow: false,
-            requiresDeviceIdle: false,
-            requiredNetworkType: NetworkType.NONE), (String taskId) async {
-      //fetch-event callback.
-      _getNearbyLandmark();
-      BackgroundFetch.finish(taskId);
-    }, (String taskId) async {
-      // Task timeout handler.
-      print("[BackgroundFetch] TASK TIMEOUT taskId: $taskId");
-      BackgroundFetch.finish(taskId);
-    });
-  }
-
   _getNearbyLandmark() {
-    final userLatitude = position!.latitude;
-    final userLongitude = position!.longitude;
+    location.onLocationChanged.listen((LocationData currentLocation) {
+      final userLatitude = currentLocation.latitude;
+      final userLongitude = currentLocation.longitude;
 
-    EasyGeofencing.startGeofenceService(
-        pointedLatitude: userLatitude.toString(),
-        pointedLongitude: userLongitude.toString(),
-        radiusMeter: '1000',
-        eventPeriodInSeconds: 10);
-    geofenceStatusStream ??=
-        EasyGeofencing.getGeofenceStream()!.listen((GeofenceStatus status) {
       _nearbyLandmarks.forEach((element) {
-        var p = 0.017453292519943295;
-        var c = cos;
-        var a = 0.5 -
-            c((element.latitude - userLatitude) * p) / 2 +
-            c(userLatitude * p) *
-                c(element.latitude * p) *
-                (1 - c((element.longitude - userLongitude) * p)) /
-                2;
-        var distance = 12742 * asin(sqrt(a));
+        final lon1 = userLongitude! * pi / 180;
+        final lon2 = element.longitude * pi / 180;
+        final lat1 = userLatitude! * pi / 180;
+        final lat2 = element.latitude * pi / 180;
+
+        // Haversine formula
+        final dlon = lon2 - lon1;
+        final dlat = lat2 - lat1;
+        final a = pow(sin(dlat / 2), 2) +
+            cos(lat1) * cos(lat2) * pow(sin(dlon / 2), 2);
+
+        final c = 2 * asin(sqrt(a));
+        const r = 6371;
+        // calculate the result
+        final distance = (c * r);
+        print('Distance is: $distance');
+
         if (distance < 7) {
-          setState(() {
-            if (!_ispopupShown) {
+          if (!_ispopupShown) {
+            setState(() {
               _showAlertDialog(element.title);
-            }
-          });
+            });
+          }
         }
       });
     });
@@ -142,13 +104,14 @@ class _PlacesListState extends State<PlacesList> {
 
   @override
   void initState() {
+    location.enableBackgroundMode(enable: true);
     super.initState();
-    // _getPosition();
   }
 
   @override
   void didChangeDependencies() {
-    _getPosition();
+    // _getPosition();
+    _getNearbyLandmark();
     super.didChangeDependencies();
   }
 
