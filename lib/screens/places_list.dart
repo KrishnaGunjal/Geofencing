@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'package:easy_geofencing/enums/geofence_status.dart';
-import 'package:flutter/material.dart';
 
-import 'package:location/location.dart';
-import 'dart:math' show cos, sqrt, asin, pow, sin, pi;
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter/material.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/cupertino.dart';
 
@@ -17,11 +15,14 @@ class PlacesList extends StatefulWidget {
 }
 
 class _PlacesListState extends State<PlacesList> {
-  Location location = new Location();
-  String geofenceStatus = '';
-  bool isReady = false;
-  StreamSubscription<GeofenceStatus>? geofenceStatusStream;
   bool _ispopupShown = false;
+  final LocationSettings locationSettings = const LocationSettings(
+    accuracy: LocationAccuracy.high,
+    distanceFilter: 100,
+  );
+
+  final GeolocatorPlatform _geolocatorPlatform = GeolocatorPlatform.instance;
+  StreamSubscription<Position>? _positionStreamSubscription;
 
   static const _nearbyLandmarks = [
     Landmark(title: 'Wakad', latitude: 18.598944, longitude: 73.765274),
@@ -31,42 +32,141 @@ class _PlacesListState extends State<PlacesList> {
     Landmark(title: 'Kasarsai Dam', latitude: 22.615170, longitude: 88.411510)
   ];
 
-  _getNearbyLandmark() {
-    location.onLocationChanged.listen((LocationData currentLocation) {
-      final userLatitude = currentLocation.latitude;
-      final userLongitude = currentLocation.longitude;
+  bool _didUserMoved(originalLat, originalLong, currentLat, currentLong) {
+    bool isUserMoved = false;
+    //returns distance in meters
+    final distance = Geolocator.distanceBetween(
+        originalLat, originalLong, currentLat, currentLong);
+    if (distance >= 1000) {
+      isUserMoved = true;
+    } else {
+      isUserMoved = false;
+    }
+    return isUserMoved;
+  }
 
-      _nearbyLandmarks.forEach((element) {
-        final lon1 = userLongitude! * pi / 180;
-        final lon2 = element.longitude * pi / 180;
-        final lat1 = userLatitude! * pi / 180;
-        final lat2 = element.latitude * pi / 180;
+  _checkTimer() {
+    //TODO: need to change startShift to desired time for now it has been hardcoded.
+    final startShift = DateTime.now();
+    final endShift = DateTime.now().add(Duration(hours: 1));
+    final currentTime = DateTime.now();
 
-        // Haversine formula
-        final dlon = lon2 - lon1;
-        final dlat = lat2 - lat1;
-        final a = pow(sin(dlat / 2), 2) +
-            cos(lat1) * cos(lat2) * pow(sin(dlon / 2), 2);
+    //Calculation for whether user is in between start and end service.
+    if (currentTime.isBefore(endShift) && currentTime.isAfter(startShift)) {
+      _getNearbyLandmark();
+    }
+  }
 
-        final c = 2 * asin(sqrt(a));
-        const r = 6371;
-        // calculate the result
-        final distance = (c * r);
-        print('Distance is: $distance');
+  Future<void> _getCurrentPosition() async {
+    final hasPermission = await _handlePermission();
 
-        if (distance < 7) {
+    if (!hasPermission) {
+      return;
+    }
+
+    final position = await _geolocatorPlatform.getCurrentPosition();
+    print('**************$position*********');
+  }
+
+  Future<bool> _handlePermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Test if location services are enabled.
+    serviceEnabled = await _geolocatorPlatform.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Location services are not enabled don't continue
+      // accessing the position and request users of the
+      // App to enable the location services.
+
+      _showAlertDialog('Please enable the Location services');
+      return false;
+    }
+
+    permission = await _geolocatorPlatform.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await _geolocatorPlatform.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // Permissions are denied, next time you could try
+        // requesting permissions again (this is also where
+        // Android's shouldShowRequestPermissionRationale
+        // returned true. According to Android guidelines
+        // your App should show an explanatory UI now.
+        _showAlertDialog('Please enable the Location services');
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // Permissions are denied forever, handle appropriately.
+      _showAlertDialog(
+          'Location permissions are denied, Please enable to continue.');
+      return false;
+    }
+    _checkTimer();
+    LocationPermission permissionType = await Geolocator.checkPermission();
+    print('**********permissions enabled********$permissionType');
+    _getNearbyLandmark();
+    // When we reach here, permissions are granted and we can
+    // continue accessing the position of the device.
+
+    return true;
+  }
+
+  _getNearbyLandmark() async {
+    double? userStartLat;
+    double? userStartLong;
+
+    Position? lastKnownPosition = await Geolocator.getLastKnownPosition();
+    userStartLat = lastKnownPosition!.latitude;
+    userStartLong = lastKnownPosition.longitude;
+
+    //assign current location to vars for further comparison
+    _positionStreamSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings)
+            .listen((Position? position) {
+      print(position == null
+          ? 'Unknown'
+          : '${position.latitude.toString()}, ${position.longitude.toString()}');
+
+      final userCurrentLatitude = position!.latitude;
+      final userCurrentLongitude = position.longitude;
+
+      final isUserMoved = _didUserMoved(userStartLat, userStartLong,
+          userCurrentLatitude, userCurrentLongitude);
+
+//calculating nearby landmark only if user has been  moved
+      if (isUserMoved) {
+        double previousDistance = double.infinity;
+        Landmark previousLandmark = const Landmark(
+            title: 'No nearby Landmarks', latitude: 10.12, longitude: 12.10);
+        _nearbyLandmarks.forEach((element) {
+          final distance = Geolocator.distanceBetween(userCurrentLatitude,
+              userCurrentLongitude, element.latitude, element.longitude);
+          print('Distance is: $distance');
+
+          if (distance < previousDistance) {
+            previousDistance = distance;
+            previousLandmark = Landmark(
+                title: element.title,
+                latitude: element.latitude,
+                longitude: element.longitude);
+          }
+        });
+        if (previousDistance < 7000) {
           if (!_ispopupShown) {
             setState(() {
-              _showAlertDialog(element.title);
+              _showAlertDialog(previousLandmark.title);
             });
           }
         }
-      });
+      }
     });
   }
 
   _showAlertDialog(placeTitle) {
     _ispopupShown = true;
+    _positionStreamSubscription!.cancel();
     Widget okButton = TextButton(
       child: const Text("Okay"),
       onPressed: () {
@@ -104,14 +204,16 @@ class _PlacesListState extends State<PlacesList> {
 
   @override
   void initState() {
-    location.enableBackgroundMode(enable: true);
     super.initState();
   }
 
   @override
   void didChangeDependencies() {
     // _getPosition();
-    _getNearbyLandmark();
+    // _getNearbyLandmark();
+    _getCurrentPosition();
+
+    // _checkTimer();
     super.didChangeDependencies();
   }
 

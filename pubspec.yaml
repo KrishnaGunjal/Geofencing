@@ -31,10 +31,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  easy_geofencing: ^0.2.0
-  background_fetch: ^1.1.2
+  geolocator: ^9.0.2
+  intl: ^0.18.0
   location: ^4.2.0
-
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

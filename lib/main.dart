@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:background_fetch/background_fetch.dart';
 
 import './screens/places_list.dart';
 
