@@ -1,9 +1,9 @@
 import 'dart:async';
-
-import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/cupertino.dart';
+import 'package:location/location.dart';
+import 'dart:math' show cos, sqrt, asin, pow, sin, pi;
 
 import '../modals/landmark.dart';
 
@@ -16,28 +16,30 @@ class PlacesList extends StatefulWidget {
 
 class _PlacesListState extends State<PlacesList> {
   bool _ispopupShown = false;
-  final LocationSettings locationSettings = const LocationSettings(
-    accuracy: LocationAccuracy.high,
-    distanceFilter: 100,
-  );
-
-  final GeolocatorPlatform _geolocatorPlatform = GeolocatorPlatform.instance;
-  StreamSubscription<Position>? _positionStreamSubscription;
+  final Location location = Location();
+  late StreamSubscription subscription;
 
   static const _nearbyLandmarks = [
-    Landmark(title: 'Wakad', latitude: 18.598944, longitude: 73.765274),
-    Landmark(
-        title: 'Nitor Infotech', latitude: 18.593550, longitude: 73.702220),
-    Landmark(title: 'Xion Mall', latitude: 40.623009, longitude: -89.579132),
-    Landmark(title: 'Kasarsai Dam', latitude: 22.615170, longitude: 88.411510)
+    Landmark(title: 'Kothrud', latitude: 18.509890, longitude: 73.807182),
+    Landmark(title: 'Lonavala', latitude: 18.7557, longitude: 73.4091),
+    Landmark(title: 'Pheonix Mall', latitude: 18.5621, longitude: 73.9167),
+    Landmark(title: 'Katraj', latitude: 18.4529, longitude: 73.8652)
   ];
 
   bool _didUserMoved(originalLat, originalLong, currentLat, currentLong) {
     bool isUserMoved = false;
     //returns distance in meters
-    final distance = Geolocator.distanceBetween(
-        originalLat, originalLong, currentLat, currentLong);
-    if (distance >= 1000) {
+    var p = 0.017453292519943295;
+    var c = cos;
+    var a = 0.5 -
+        c((currentLat - originalLat) * p) / 2 +
+        c(originalLat * p) *
+            c(currentLat * p) *
+            (1 - c((currentLong - originalLong) * p)) /
+            2;
+    var distance = 12742 * asin(sqrt(a));
+
+    if (distance >= 1) {
       isUserMoved = true;
     } else {
       isUserMoved = false;
@@ -57,106 +59,72 @@ class _PlacesListState extends State<PlacesList> {
     }
   }
 
-  Future<void> _getCurrentPosition() async {
-    final hasPermission = await _handlePermission();
-
-    if (!hasPermission) {
-      return;
-    }
-
-    final position = await _geolocatorPlatform.getCurrentPosition();
-    print('**************$position*********');
-  }
-
-  Future<bool> _handlePermission() async {
+  _handlePermission() async {
     bool serviceEnabled;
-    LocationPermission permission;
+    PermissionStatus permissionGranted;
 
-    // Test if location services are enabled.
-    serviceEnabled = await _geolocatorPlatform.isLocationServiceEnabled();
+    serviceEnabled = await location.serviceEnabled();
     if (!serviceEnabled) {
-      // Location services are not enabled don't continue
-      // accessing the position and request users of the
-      // App to enable the location services.
-
-      _showAlertDialog('Please enable the Location services');
-      return false;
-    }
-
-    permission = await _geolocatorPlatform.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await _geolocatorPlatform.requestPermission();
-      if (permission == LocationPermission.denied) {
-        // Permissions are denied, next time you could try
-        // requesting permissions again (this is also where
-        // Android's shouldShowRequestPermissionRationale
-        // returned true. According to Android guidelines
-        // your App should show an explanatory UI now.
-        _showAlertDialog('Please enable the Location services');
-        return false;
+      serviceEnabled = await location.requestService();
+      if (!serviceEnabled) {
+        _showAlertDialog('Enable location services.');
       }
     }
 
-    if (permission == LocationPermission.deniedForever) {
-      // Permissions are denied forever, handle appropriately.
-      _showAlertDialog(
-          'Location permissions are denied, Please enable to continue.');
-      return false;
+    permissionGranted = await location.hasPermission();
+    if (permissionGranted == PermissionStatus.denied) {
+      permissionGranted = await location.requestPermission();
+      if (permissionGranted != PermissionStatus.granted) {
+        _showAlertDialog('Enable location permissions.');
+      }
     }
+    location.enableBackgroundMode(enable: true);
     _checkTimer();
-    LocationPermission permissionType = await Geolocator.checkPermission();
-    print('**********permissions enabled********$permissionType');
-    _getNearbyLandmark();
-    // When we reach here, permissions are granted and we can
-    // continue accessing the position of the device.
-
     return true;
   }
 
   _getNearbyLandmark() async {
-    double? userStartLat;
-    double? userStartLong;
-
-    Position? lastKnownPosition = await Geolocator.getLastKnownPosition();
-    userStartLat = lastKnownPosition!.latitude;
-    userStartLong = lastKnownPosition.longitude;
+    LocationData lastKnownPosition = await location.getLocation();
 
     //assign current location to vars for further comparison
-    _positionStreamSubscription =
-        Geolocator.getPositionStream(locationSettings: locationSettings)
-            .listen((Position? position) {
-      print(position == null
-          ? 'Unknown'
-          : '${position.latitude.toString()}, ${position.longitude.toString()}');
-
-      final userCurrentLatitude = position!.latitude;
-      final userCurrentLongitude = position.longitude;
-
-      final isUserMoved = _didUserMoved(userStartLat, userStartLong,
-          userCurrentLatitude, userCurrentLongitude);
+    subscription = location.onLocationChanged.listen((LocationData position) {
+      var isUserMoved = _didUserMoved(lastKnownPosition.latitude,
+          lastKnownPosition.longitude, position.latitude, position.longitude);
+      double distanceToNearestLandmark = double.infinity;
+      Landmark nearestLandmark = const Landmark(
+          title: 'No nearby Landmarks', latitude: 10.12, longitude: 12.10);
+      double distance;
+      List<Map<String, dynamic>> arrayOfDistance = [];
+      // List<Landmark>
 
 //calculating nearby landmark only if user has been  moved
       if (isUserMoved) {
-        double previousDistance = double.infinity;
-        Landmark previousLandmark = const Landmark(
-            title: 'No nearby Landmarks', latitude: 10.12, longitude: 12.10);
         _nearbyLandmarks.forEach((element) {
-          final distance = Geolocator.distanceBetween(userCurrentLatitude,
-              userCurrentLongitude, element.latitude, element.longitude);
-          print('Distance is: $distance');
+          var p = 0.017453292519943295;
+          var c = cos;
+          var a = 0.5 -
+              c((element.latitude - position.latitude!) * p) / 2 +
+              c(position.latitude! * p) *
+                  c(element.latitude * p) *
+                  (1 - c((element.longitude - position.longitude!) * p)) /
+                  2;
+          var distance = 12742 * asin(sqrt(a));
 
-          if (distance < previousDistance) {
-            previousDistance = distance;
-            previousLandmark = Landmark(
-                title: element.title,
-                latitude: element.latitude,
-                longitude: element.longitude);
-          }
+          print('Distance is: $distance');
+          Map<String, dynamic> abc = {
+            'name': element.title,
+            'distance': distance
+          };
+          arrayOfDistance.add(abc);
         });
-        if (previousDistance < 7000) {
+        if (arrayOfDistance.isNotEmpty) {
+          arrayOfDistance
+              .sort((a, b) => a['distance'].compareTo(b['distance']));
           if (!_ispopupShown) {
             setState(() {
-              _showAlertDialog(previousLandmark.title);
+              _showAlertDialog(arrayOfDistance.first['name']);
+              isUserMoved = false;
+              subscription.cancel();
             });
           }
         }
@@ -166,12 +134,12 @@ class _PlacesListState extends State<PlacesList> {
 
   _showAlertDialog(placeTitle) {
     _ispopupShown = true;
-    _positionStreamSubscription!.cancel();
     Widget okButton = TextButton(
       child: const Text("Okay"),
       onPressed: () {
         Navigator.pop(context);
         _ispopupShown = false;
+        subscription.cancel();
       },
     );
     AlertDialog alert = AlertDialog(
@@ -204,17 +172,8 @@ class _PlacesListState extends State<PlacesList> {
 
   @override
   void initState() {
+    _handlePermission();
     super.initState();
-  }
-
-  @override
-  void didChangeDependencies() {
-    // _getPosition();
-    // _getNearbyLandmark();
-    _getCurrentPosition();
-
-    // _checkTimer();
-    super.didChangeDependencies();
   }
 
   @override

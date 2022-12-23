@@ -31,7 +31,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  geolocator: ^9.0.2
   intl: ^0.18.0
   location: ^4.2.0
 
